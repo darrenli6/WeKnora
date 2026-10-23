@@ -67,3 +67,5 @@ EXPOSE 8080
 
 ENTRYPOINT ["./scripts/docker-entrypoint.sh"]
 CMD ["./WeKnora"]
+
+
