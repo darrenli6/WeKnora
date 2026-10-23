@@ -1,0 +1,69 @@
+# Railway 专用 Dockerfile
+# 跳过 browserskill / anydoc Rust 编译阶段，去掉 BuildKit cache mount
+
+# Build stage
+FROM golang:1.26-bookworm AS builder
+
+WORKDIR /app
+
+ARG GOSUMDB_ARG=off
+ENV GOSUMDB=${GOSUMDB_ARG}
+
+RUN apt-get update && \
+    apt-get install -y git build-essential libsqlite3-dev curl && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install migrate tool
+RUN go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+
+# Download Go modules
+COPY go.mod go.sum ./
+COPY third_party/anydoc-go/go.mod third_party/anydoc-go/go.mod
+RUN go mod download
+
+COPY cmd/download cmd/download
+RUN go run cmd/download/duckdb/duckdb.go
+
+COPY . .
+
+RUN bash ./scripts/copy-licenses.sh /license-bundle
+
+# Build（跳过 anydoc Rust 编译）
+RUN make build-prod
+
+RUN cp -r /go/pkg/mod/github.com/yanyiwu/ /app/yanyiwu/
+
+# Final stage
+FROM debian:12-slim
+
+WORKDIR /app
+
+RUN useradd -m -s /bin/bash appuser
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        ca-certificates build-essential postgresql-client tzdata \
+        curl bash libsqlite3-0 gosu nodejs npm && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /data/files && \
+    chown -R appuser:appuser /app /data/files
+
+COPY --from=builder /go/bin/migrate /usr/local/bin/
+COPY --from=builder /app/yanyiwu/ /go/pkg/mod/github.com/yanyiwu/
+
+COPY --from=builder /app/config ./config
+COPY --from=builder /app/scripts ./scripts
+COPY --from=builder /app/migrations ./migrations
+COPY --from=builder /app/dataset/samples ./dataset/samples
+COPY --from=builder /root/.duckdb /home/appuser/.duckdb
+COPY --from=builder /app/WeKnora .
+COPY --from=builder /license-bundle/ ./
+
+COPY --from=builder /app/scripts/docker-entrypoint.sh ./scripts/docker-entrypoint.sh
+RUN chmod +x ./scripts/*.sh
+
+EXPOSE 8080
+
+ENTRYPOINT ["./scripts/docker-entrypoint.sh"]
+CMD ["./WeKnora"]
