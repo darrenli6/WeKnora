@@ -1,0 +1,38 @@
+# RagAny 内置模型声明：启动时自动写入数据库 models 表，所有用户可用
+# 密钥只从 .env.lite 读取（${变量名}），这个文件会进 git，不写明文 key
+builtin_models:
+  # 对话模型：回答问题、总结
+  - id: ragany-llm
+    type: KnowledgeQA
+    source: remote
+    is_default: true
+    name: ${LLM_MODEL_NAME}
+    parameters:
+      base_url: ${AI_BASE_URL}
+      api_key: ${AI_API_KEY}
+      provider: generic             # 通用 OpenAI 兼容接口，适合中转站
+
+  # 向量模型：把文档切片转成向量存进 pgvector
+  - id: ragany-embedding
+    type: Embedding
+    source: remote
+    is_default: true
+    name: ${EMBEDDING_MODEL_NAME}
+    parameters:
+      base_url: ${AI_BASE_URL}
+      api_key: ${AI_API_KEY}
+      provider: generic
+      embedding_parameters:
+        dimension: 1024                     # 输出 1024 维，命中现成的 HNSW 索引
+        supports_dimension_override: true   # 请求时带上 dimensions=1024
+        truncate_prompt_tokens: 0
+
+  # 视觉模型：识别扫描版 PDF、图片里的文字（纯文字 PDF 用不到，但建议配上）
+  - id: ragany-vlm
+    type: VLLM
+    source: remote
+    name: ${VLM_MODEL_NAME}
+    parameters:
+      base_url: ${AI_BASE_URL}
+      api_key: ${AI_API_KEY}
+      provider: generic
